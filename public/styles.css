@@ -64,7 +64,7 @@ a:hover { text-decoration: underline; }
 .btn-primary { background: var(--blue); color: #fff; }
 .btn-primary:not(:disabled):hover { background: var(--blue-hover); }
 .btn-light { background: var(--text); color: #0f1419; }
-.btn-light:hover { background: #d7dbdc; }
+.btn-light:not(:disabled):hover { background: #d7dbdc; }
 .btn-outline { background: transparent; color: var(--text); border-color: #536471; }
 .btn-outline:hover { background: rgba(239, 243, 244, .1); }
 .btn svg { width: 16px; height: 16px; fill: currentColor; }

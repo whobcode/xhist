@@ -7,7 +7,7 @@ Two ways to use it:
 - **CLI** (`src/`). It drives your own logged-in browser profile with Playwright and reads the GraphQL responses x.com already makes. This is the most thorough path: it reads the "About this account" change count and walks search back to the oldest post.
 - **Web** at **https://xhist.hwmnbn.me** (`worker/` + `public/`). Type a username:
   - **Basic** needs no sign-in. It uses memory.lol and the Wayback Machine.
-  - **Detailed** uses "Sign in with X" (official OAuth, read-only scopes) and reads posts and replies through the X API.
+  - **Detailed**: visitors sign in with their own X account (X's official OAuth consent screen, read-only scopes). The lookup reads posts and replies through the X API using that visitor's token.
   - You can also open a `.json` report from the CLI on the page.
 
 > **Terms of service:** automated access to X may violate X's Terms of Service. The CLI is for personal, low-volume use.
@@ -58,12 +58,18 @@ npm run deploy
 
 One-time setup for deploys:
 
-1. `npx wrangler kv namespace create XHIST_KV`, then put the id in `wrangler.jsonc`.
-2. For **Detailed**, create an app at developer.x.com:
-   - OAuth 2.0, type "Web App" (confidential client)
-   - Callback URL: `https://xhist.hwmnbn.me/auth/callback`
-   - Then run `npx wrangler secret put X_CLIENT_ID` and `npx wrangler secret put X_CLIENT_SECRET`.
-3. Optional: set `ALLOWED_X_USERS` in `wrangler.jsonc` to limit detailed lookups to specific usernames. Every detailed lookup uses your X developer app's API quota.
+1. `npx wrangler kv namespace create XHIST_KV`, then put the id in `wrangler.jsonc`. (Already done for xhist.hwmnbn.me.)
+2. To turn on **Sign in with X** for Detailed lookups, register an app at developer.x.com. No secrets are needed.
+   - User authentication settings: OAuth 2.0, type of app **Native App** (a public PKCE client)
+   - App permissions: **Read**
+   - Callback URI: `https://xhist.hwmnbn.me/auth/callback`; Website URL: `https://xhist.hwmnbn.me`
+   - Copy the **OAuth 2.0 Client ID** into `X_CLIENT_ID` under `vars` in `wrangler.jsonc`, then run `npm run deploy`.
+
+   The client ID isn't a secret, since it appears in every sign-in URL. Each visitor signs in with their own X account on X's consent screen, and their lookups run on their own token. xhist never sees a password. (If you register a confidential "Web App" instead, also run `npx wrangler secret put X_CLIENT_SECRET`.)
+3. **Cost:** X bills every API read to the developer app, whoever signed in. A visitor's own token doesn't move the charge to them. To keep that bounded:
+   - `DETAILED_DAILY_LIMIT` (default 25) caps fresh detailed lookups per X account per day. Cached results are free. Set it to `"0"` for no cap.
+   - `ALLOWED_X_USERS` (optional) limits detailed lookups to listed accounts. Use numeric account IDs where you can: usernames can be renamed or re-registered by someone else.
+   - Set a spending limit in the X developer console as well.
 
 What Detailed can reach depends on the app's X API access level. It always reads the most recent 3,200 posts. It also reads the oldest posts and their reply threads, but only if the plan includes full-archive search; without it, the page says so.
 

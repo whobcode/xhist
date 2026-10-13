@@ -23,6 +23,24 @@ async function limited(req, env) {
   return !success;
 }
 
+/**
+ * X bills API reads to the developer app, not to the visitor whose token is
+ * used, so each signed-in account gets DETAILED_DAILY_LIMIT fresh detailed
+ * lookups per UTC day (0 = unlimited). KV is eventually consistent, so this
+ * is a soft cap, which is all it needs to be.
+ */
+async function detailedQuota(env, session) {
+  const limit = Number(env.DETAILED_DAILY_LIMIT ?? 25);
+  if (!limit || !session.userId) return { ok: true, limit, spend: async () => {} };
+  const key = `quota:${session.userId}:${new Date().toISOString().slice(0, 10)}`;
+  const used = Number(await env.XHIST_KV.get(key).catch(() => null)) || 0;
+  return {
+    ok: used < limit,
+    limit,
+    spend: () => env.XHIST_KV.put(key, String(used + 1), { expirationTtl: 2 * 86400 }).catch(() => {}),
+  };
+}
+
 async function lookup(req, env) {
   const url = new URL(req.url);
   const input = (url.searchParams.get("u") ?? "").trim().replace(/^@/, "");
@@ -33,10 +51,15 @@ async function lookup(req, env) {
     const session = await getSession(req, env);
     if (!session) return json({ error: "Sign in with X to run a detailed lookup.", signIn: true }, 401);
     if (!allowedDetailed(env, session)) return json({ error: "Detailed lookups are limited to approved accounts." }, 403);
+    const quota = await detailedQuota(env, session);
+    if (!quota.ok) return json({ error: `You've used today's ${quota.limit} detailed lookups. Basic lookups are still available.` }, 429);
     try {
-      return json(await detailedLookup(input, session, env));
+      const result = await detailedLookup(input, session, env);
+      if (!result.cached && result.status === "ok") await quota.spend();
+      return json(result);
     } catch (e) {
       if (e instanceof XApiError) {
+        console.error(`X API ${e.status}: ${JSON.stringify(e.body ?? null).slice(0, 300)}`);
         if (e.rateLimited) return json({ error: "X API rate limit reached. Try again in a few minutes." }, 429);
         if (e.status === 401) return json({ error: "Your X sign-in expired. Sign in again.", signIn: true }, 401);
         return json({ error: `X API error ${e.status}.` }, 502);

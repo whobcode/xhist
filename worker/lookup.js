@@ -95,6 +95,8 @@ function userStatus(resp) {
 export async function detailedLookup(input, session, env) {
   const x = xclient(session.accessToken);
   const srcCache = kvCache(env, "src", 86400);
+  // Full-archive search allows about one request per second per app.
+  const gap = () => sleep(env.API_GAP_MS !== undefined ? Number(env.API_GAP_MS) : 1100);
   const now = new Date().toISOString();
   const notes = [];
 
@@ -108,39 +110,55 @@ export async function detailedLookup(input, session, env) {
   if (user.protected) return { mode: "detailed", input, status: "protected", userId: restId, currentHandle: handle, profile, message: "This account is protected; its posts are not visible." };
 
   const cacheKey = `detail:${restId}`;
-  const hit = await env.XHIST_KV.get(cacheKey, "json");
+  const hit = await env.XHIST_KV.get(cacheKey, "json").catch(() => null);
   if (hit) return { ...hit, cached: true };
+
+  // Anything that leaves the result incomplete is cached briefly, not for 12 h.
+  let partial = false;
+  const apiNote = (what, e) => {
+    partial = true;
+    console.error(`X API ${e.status} while ${what}: ${JSON.stringify(e.body ?? null).slice(0, 300)}`);
+    if (e.rateLimited) return `X API rate limit hit while ${what}; results are partial.`;
+    if (e.status === 402) return `X API credits ran out while ${what}; results are partial.`;
+    return `X API error ${e.status} while ${what}; results are partial.`;
+  };
 
   // Own recent posts (up to 3,200).
   const tweets = new Map();
   const add = list => list.forEach(t => tweets.set(t.id, t));
-  const pages = Number(env.TIMELINE_PAGES) || 5;
-  try {
-    add((await x.timeline(restId, pages)).flatMap(normalizeV2Page));
-  } catch (e) {
-    if (!(e instanceof XApiError)) throw e;
-    notes.push(e.rateLimited ? "X API rate limit hit while reading posts; results are partial." : `Couldn't read posts (X API ${e.status}).`);
-  }
+  const tl = await x.timeline(restId, Number(env.TIMELINE_PAGES) || 5);
+  add(tl.pages.flatMap(normalizeV2Page));
+  if (tl.error) notes.push(apiNote("reading posts", tl.error));
 
-  // Oldest posts: full-archive search from the creation date forward.
+  // Oldest posts: full-archive search from the creation date forward. Results
+  // come newest-first, so page through the window to reach its oldest posts.
   let archive = true;
   if (createdAt) {
-    for (const span of [30, 180, 730]) {
-      try {
-        const end = Math.min(Date.parse(createdAt) + span * DAY, Date.now() - 30_000);
-        const p = await x.searchAll(`from:${restId}`, { start_time: createdAt, end_time: new Date(end).toISOString() });
+    const maxPages = Number(env.ARCHIVE_PAGES) || 3;
+    search: for (const span of [30, 180, 730]) {
+      const end = Math.min(Date.parse(createdAt) + span * DAY, Date.now() - 30_000);
+      let token;
+      let found = 0;
+      for (let i = 0; i < maxPages; i++) {
+        let p;
+        try {
+          p = await x.searchAll(`from:${restId}`, { start_time: createdAt, end_time: new Date(end).toISOString(), next_token: token });
+        } catch (e) {
+          if (!(e instanceof XApiError)) throw e;
+          archive = false;
+          if (e.unavailable) notes.push("Full-archive search isn't on this X API plan, so only the most recent 3,200 posts were checked.");
+          else notes.push(apiNote("searching the archive", e));
+          break search;
+        }
         const got = normalizeV2Page(p);
         add(got);
-        if (got.length) break;
-      } catch (e) {
-        if (!(e instanceof XApiError)) throw e;
-        archive = false;
-        notes.push(e.unavailable
-          ? "Full-archive search isn't on this X API plan, so only the most recent 3,200 posts were checked."
-          : "X API rate limit hit during archive search; older posts may be missing.");
-        break;
+        found += got.length;
+        token = p?.meta?.next_token;
+        await gap();
+        if (!token) break;
       }
-      await sleep(1100);
+      if (found) break;
+      if (end >= Date.now() - 60_000) break;
     }
   }
 
@@ -148,24 +166,26 @@ export async function detailedLookup(input, session, env) {
   const oldestPostAt = own.reduce((m, t) => (!m || t.createdAt < m ? t.createdAt : m), null);
   const byId = await memoryLolById(restId, { cache: srcCache });
 
-  // Replies to the oldest posts and around each suspected change.
+  // Replies to the oldest posts and around each suspected change. Search only
+  // looks back 30 days unless told otherwise, so start at the post itself.
   let threads = 0;
   if (archive) {
     const prelim = buildTimeline({
       observations: [...observationsFromTweets(own, restId), ...memoryLolObservations(byId)],
       currentHandle: handle, createdAt, about: null, oldestPostAt, now,
     });
+    const postedAt = new Map(own.map(t => [t.id, t.createdAt]));
     const targets = pickReplyTargets(own, prelim.changes, Number(env.REPLY_THREADS) || 6);
     for (const id of targets) {
       try {
-        add(normalizeV2Page(await x.searchAll(`conversation_id:${id} -from:${restId}`)));
+        add(normalizeV2Page(await x.searchAll(`conversation_id:${id} -from:${restId}`, { start_time: postedAt.get(id) })));
         threads++;
       } catch (e) {
         if (!(e instanceof XApiError)) throw e;
-        notes.push("X API limit reached while reading replies; reply evidence is partial.");
+        notes.push(apiNote("reading replies", e));
         break;
       }
-      await sleep(1100);
+      await gap();
     }
   }
 
@@ -205,6 +225,7 @@ export async function detailedLookup(input, session, env) {
     stats: { ownPosts: own.length, oldestPost: oldestPostAt, threadsOpened: threads, observations: observations.length },
     notes: [...notes, ...t.notes],
   };
-  await env.XHIST_KV.put(cacheKey, JSON.stringify(result), { expirationTtl: 12 * 3600 });
+  await env.XHIST_KV.put(cacheKey, JSON.stringify(result), { expirationTtl: partial ? 1800 : 12 * 3600 })
+    .catch(e => console.error(`kv put ${cacheKey}: ${e.message}`));
   return result;
 }

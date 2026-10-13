@@ -21,12 +21,21 @@
   "ratelimits": [{ "name": "LOOKUP_LIMITER", "namespace_id": "4801", "simple": { "limit": 20, "period": 60 } }],
 
   "vars": {
-    // Comma-separated X usernames allowed to run detailed lookups. Empty = anyone signed in.
+    // Client ID of the X app (developer.x.com) registered as a "Native App",
+    // callback https://xhist.hwmnbn.me/auth/callback. Public by design: it is
+    // part of every sign-in URL. Empty = sign-in off, basic lookups only.
+    "X_CLIENT_ID": "",
+    // Who may run detailed lookups: comma-separated X account IDs (stable) or
+    // usernames (can be re-registered by someone else). Empty = anyone signed in.
     "ALLOWED_X_USERS": "",
+    // X bills every API read to this app, whoever signed in. Fresh detailed
+    // lookups per X account per day; "0" = unlimited.
+    "DETAILED_DAILY_LIMIT": "25",
+    "ARCHIVE_PAGES": "3",
     "TIMELINE_PAGES": "5",
     "REPLY_THREADS": "6"
   },
-  // Secrets: wrangler secret put X_CLIENT_ID / X_CLIENT_SECRET
+  // Only for an X app registered as a "Web App": wrangler secret put X_CLIENT_SECRET
 
   "observability": { "enabled": true }
 }

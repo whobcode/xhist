@@ -67,7 +67,10 @@ function renderAccount() {
   const box = $("#account");
   box.replaceChildren();
   const me = state.me;
-  if (!me?.authAvailable) return;
+  if (!me?.authAvailable) {
+    box.append(h("button", { class: "btn btn-light", type: "button", disabled: true, title: "Sign-in with X isn't connected on this site yet" }, svg(ICON_X), "Sign in"));
+    return;
+  }
   if (me.signedIn) {
     if (me.avatar) box.append(h("img", { src: me.avatar, alt: "" }));
     box.append(
@@ -104,7 +107,7 @@ function renderModes() {
   hint.textContent = state.mode === "detailed"
     ? (me.signedIn
       ? "Reads the account's own posts and replies through the X API. Takes up to a minute."
-      : me.authAvailable ? "Sign in with X to run a detailed lookup." : "Detailed lookups aren't set up on this site yet.")
+      : me.authAvailable ? "Sign in with X to run a detailed lookup." : "Sign-in with X isn't connected on this site yet, so only basic lookups work for now.")
     : "Uses archived name records from memory.lol and the Wayback Machine. No sign-in needed.";
 }
 
@@ -145,7 +148,7 @@ async function lookup(handle, mode, { push = true } = {}) {
     notice(state.me.authAvailable ? "Sign in for a detailed lookup" : "Detailed lookups aren't available",
       state.me.authAvailable
         ? "A detailed lookup reads the account's own posts through the X API, so it needs you signed in with X. xhist only asks for read access."
-        : "Detailed lookups aren't set up on this site yet. Try a basic lookup.",
+        : "Sign-in with X isn't connected on this site yet, so detailed lookups are off. Basic lookups still work.",
       { action: state.me.authAvailable ? h("a", { class: "btn btn-light", href: "/auth/login" }, svg(ICON_X), "Sign in with X") : null });
     return;
   }

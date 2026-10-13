@@ -36,7 +36,20 @@ and the Worker (`worker/`, xhist.hwmnbn.me) share the pure core in `src/`.
 - **Basic web lookups never claim a handle is current.** memory.lol can only
   say "latest known", and the UI labels it that way.
 - **OAuth tokens never reach the browser.** KV session behind an HttpOnly
-  cookie; the page only sees `/api/me`.
+  `__Host-` cookie; the page only sees `/api/me`.
+- **Sign-in needs only X_CLIENT_ID** (public PKCE client, "Native App"). The
+  OAuth state + verifier live in a short-lived `__Host-` cookie, which binds the
+  flow to the browser that started it and keeps `/auth/login` free of KV writes.
+- **A failed refresh deletes the session only when X rejects the grant**, and
+  only after re-reading in case a parallel request already rotated the token.
+  Network/5xx/429 just skip that request.
+- **Archive and reply searches set start_time.** X's search defaults to the
+  last 30 days, and results come newest-first, so the oldest posts are on the
+  last page of a window, not the first.
+- **Partial detailed results are cached for 30 minutes, complete ones 12 hours.**
+  A passing 429 shouldn't pin a thin history for everyone.
+- **X bills the app, not the visitor.** DETAILED_DAILY_LIMIT caps fresh
+  detailed lookups per X account per day.
 
 ## Non-goals
 

@@ -33,23 +33,31 @@ export function xclient(token) {
       "user.fields": "created_at,protected,public_metrics,profile_image_url,name",
     }),
 
-    /** Up to `maxPages` × 100 of the user's most recent posts (X caps at 3,200). */
+    /**
+     * Up to `maxPages` × 100 of the user's most recent posts (X caps at 3,200).
+     * A failure part-way keeps the pages already fetched (and paid for).
+     */
     async timeline(userId, maxPages) {
       const pages = [];
       let token;
       for (let i = 0; i < maxPages; i++) {
-        const p = await get(`/users/${userId}/tweets`, {
-          max_results: 100, pagination_token: token, exclude: "retweets",
-          "tweet.fields": TWEET_FIELDS, expansions: "author_id", "user.fields": "username",
-        });
-        pages.push(p);
-        token = p?.meta?.next_token;
-        if (!token) break;
+        try {
+          const p = await get(`/users/${userId}/tweets`, {
+            max_results: 100, pagination_token: token, exclude: "retweets",
+            "tweet.fields": TWEET_FIELDS, expansions: "author_id", "user.fields": "username",
+          });
+          pages.push(p);
+          token = p?.meta?.next_token;
+          if (!token) break;
+        } catch (e) {
+          if (!(e instanceof XApiError)) throw e;
+          return { pages, error: e };
+        }
       }
-      return pages;
+      return { pages, error: null };
     },
 
-    /** Full-archive search, one page. */
+    /** Full-archive search, one page. Pass `next_token` from a previous page to continue. */
     searchAll: (query, extra = {}) => get("/tweets/search/all", {
       query, max_results: 100, "tweet.fields": TWEET_FIELDS, expansions: "author_id", "user.fields": "username", ...extra,
     }),
