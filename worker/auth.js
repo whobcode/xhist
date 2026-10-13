@@ -138,7 +138,8 @@ export async function callback(req, env) {
   // The state must match the one this browser was given at /auth/login.
   const [flowState, verifier] = (cookieOf(req, FLOW_COOKIE) ?? "").split(".");
   if (!flowState || !verifier) return back("expired");
-  if (!sameString(flowState, state)) return back("failed");
+  // A mismatch is usually a second sign-in started in another tab.
+  if (!sameString(flowState, state)) return back("expired");
 
   let tokens;
   try {
@@ -199,14 +200,16 @@ export async function getSession(req, env) {
     return s;
   } catch (e) {
     if (!(e instanceof TokenError) || !e.dead) return null;
+    // Maybe a parallel request already rotated the token: use its result if
+    // it shows up. Never delete or rewrite here — KV is last-write-wins and a
+    // winner's put may not be visible yet, so any write could erase it. A
+    // truly dead session just reads as signed out until the visitor signs in
+    // again (new cookie), signs out, or the 30-day TTL ends.
     for (const wait of [400, 1200]) {
       await sleep(wait);
-      const again = await env.XHIST_KV.get(key, "json");
-      if (!again) return null;
+      const again = await env.XHIST_KV.get(key, "json").catch(() => null);
       if (fresh(again)) return again;
-      if (again.refreshToken !== s.refreshToken) return null; // someone else refreshed; next request will see it
     }
-    await env.XHIST_KV.delete(key);
     return null;
   }
 }

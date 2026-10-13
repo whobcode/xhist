@@ -40,16 +40,23 @@ and the Worker (`worker/`, xhist.hwmnbn.me) share the pure core in `src/`.
 - **Sign-in needs only X_CLIENT_ID** (public PKCE client, "Native App"). The
   OAuth state + verifier live in a short-lived `__Host-` cookie, which binds the
   flow to the browser that started it and keeps `/auth/login` free of KV writes.
-- **A failed refresh deletes the session only when X rejects the grant**, and
-  only after re-reading in case a parallel request already rotated the token.
-  Network/5xx/429 just skip that request.
+- **A failed refresh never deletes or rewrites the session.** X rotates
+  refresh tokens, so parallel refreshes race, and KV is last-write-wins with
+  delayed visibility: any write from the loser can erase the winner's new
+  tokens. The loser re-reads briefly for the winner's result, else returns
+  null. A dead session just reads as signed out until re-sign-in or TTL.
 - **Archive and reply searches set start_time.** X's search defaults to the
-  last 30 days, and results come newest-first, so the oldest posts are on the
-  last page of a window, not the first.
+  last 30 days.
+- **The archive walk narrows dense windows instead of accepting them.** Search
+  is newest-first, so a window cut off by the page budget is missing exactly
+  the oldest posts. Empty windows move `lo` forward and widen; dense ones
+  shrink from the same `lo`; only a window read to its end counts.
 - **Partial detailed results are cached for 30 minutes, complete ones 12 hours.**
   A passing 429 shouldn't pin a thin history for everyone.
 - **X bills the app, not the visitor.** DETAILED_DAILY_LIMIT caps fresh
-  detailed lookups per X account per day.
+  detailed lookups per X account per day; the slot is reserved before the
+  lookup (which takes tens of seconds) and refunded if nothing was billed.
+  DETAILED_LIMITER covers the bursts a non-atomic KV counter can't.
 
 ## Non-goals
 

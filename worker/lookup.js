@@ -130,35 +130,60 @@ export async function detailedLookup(input, session, env) {
   add(tl.pages.flatMap(normalizeV2Page));
   if (tl.error) notes.push(apiNote("reading posts", tl.error));
 
-  // Oldest posts: full-archive search from the creation date forward. Results
-  // come newest-first, so page through the window to reach its oldest posts.
+  // Oldest posts: full-archive search forward from the creation date. Results
+  // come newest-first, so a window's oldest posts are on its *last* page. Walk
+  // windows from `lo`: an empty window moves `lo` past it and widens; a window
+  // too dense to read within the page budget is narrowed from the same `lo`.
+  // The first window read to the end that has posts holds the oldest ones.
   let archive = true;
   if (createdAt) {
+    const HOUR = 3_600_000;
+    const latest = Date.now() - 30_000;
     const maxPages = Number(env.ARCHIVE_PAGES) || 3;
-    search: for (const span of [30, 180, 730]) {
-      const end = Math.min(Date.parse(createdAt) + span * DAY, Date.now() - 30_000);
+    const readWindow = async (lo, hi) => {
       let token;
       let found = 0;
       for (let i = 0; i < maxPages; i++) {
-        let p;
-        try {
-          p = await x.searchAll(`from:${restId}`, { start_time: createdAt, end_time: new Date(end).toISOString(), next_token: token });
-        } catch (e) {
-          if (!(e instanceof XApiError)) throw e;
-          archive = false;
-          if (e.unavailable) notes.push("Full-archive search isn't on this X API plan, so only the most recent 3,200 posts were checked.");
-          else notes.push(apiNote("searching the archive", e));
-          break search;
-        }
+        const p = await x.searchAll(`from:${restId} -is:retweet`, {
+          start_time: new Date(lo).toISOString(), end_time: new Date(hi).toISOString(), next_token: token,
+        });
         const got = normalizeV2Page(p);
         add(got);
         found += got.length;
         token = p?.meta?.next_token;
         await gap();
-        if (!token) break;
+        if (!token) return { found, unread: false };
       }
-      if (found) break;
-      if (end >= Date.now() - 60_000) break;
+      return { found, unread: true };
+    };
+    let lo = Date.parse(createdAt);
+    let span = 7 * DAY;
+    let settled = false;
+    try {
+      for (let w = 0; w < 12 && lo < latest; w++) {
+        const hi = Math.min(lo + span, latest);
+        const r = await readWindow(lo, hi);
+        if (!r.unread) {
+          if (r.found) { settled = true; break; }
+          lo = hi;
+          span *= 4;
+        } else if (hi - lo <= HOUR) {
+          break;
+        } else {
+          span = (hi - lo) / 8;
+        }
+      }
+      if (lo >= latest) settled = true; // searched up to now: nothing older exists
+      if (!settled) {
+        partial = true;
+        notes.push("Archive search couldn't reach this account's very first posts within its page budget; the original handle may be missing.");
+      }
+    } catch (e) {
+      if (!(e instanceof XApiError)) throw e;
+      archive = false;
+      // 403 means the plan has no full-archive search, which won't change by retrying.
+      if (e.status === 403) notes.push("Full-archive search isn't on this X API plan, so only the most recent 3,200 posts were checked.");
+      else notes.push(apiNote("searching the archive", e));
     }
   }
 
@@ -196,7 +221,8 @@ export async function detailedLookup(input, session, env) {
   const byHandle = {};
   for (const h of candidates) {
     const r = await memoryLolByHandle(h, restId, { cache: srcCache });
-    if (r && Object.keys(r).length) byHandle[h] = r;
+    if (r === null) partial = true;
+    else if (Object.keys(r).length) byHandle[h] = r;
   }
 
   const t = buildTimeline({
@@ -204,8 +230,11 @@ export async function detailedLookup(input, session, env) {
     currentHandle: handle, createdAt, about: null, oldestPostAt, now,
   });
   const oldHandles = candidates.filter(h => h.toLowerCase() !== handle.toLowerCase());
-  if (!byId) notes.push("memory.lol could not be reached.");
+  if (!byId) { partial = true; notes.push("memory.lol could not be reached."); }
   notes.push("X's username-change count (About panel) isn't in the API; run the CLI for that cross-check.");
+
+  const wayback = await waybackFor(oldHandles, srcCache);
+  if (Object.values(wayback).some(v => v === null)) partial = true;
 
   const result = {
     mode: "detailed",
@@ -221,7 +250,7 @@ export async function detailedLookup(input, session, env) {
     changes: t.changes,
     unrecovered: t.unrecovered,
     memoryLol: { byId: byId ?? {}, byHandle },
-    wayback: await waybackFor(oldHandles, srcCache),
+    wayback,
     stats: { ownPosts: own.length, oldestPost: oldestPostAt, threadsOpened: threads, observations: observations.length },
     notes: [...notes, ...t.notes],
   };

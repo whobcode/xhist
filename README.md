@@ -67,7 +67,8 @@ One-time setup for deploys:
 
    The client ID isn't a secret, since it appears in every sign-in URL. Each visitor signs in with their own X account on X's consent screen, and their lookups run on their own token. xhist never sees a password. (If you register a confidential "Web App" instead, also run `npx wrangler secret put X_CLIENT_SECRET`.)
 3. **Cost:** X bills every API read to the developer app, whoever signed in. A visitor's own token doesn't move the charge to them. To keep that bounded:
-   - `DETAILED_DAILY_LIMIT` (default 25) caps fresh detailed lookups per X account per day. Cached results are free. Set it to `"0"` for no cap.
+   - `DETAILED_DAILY_LIMIT` (default 25) caps fresh detailed lookups per X account per day. A lookup that bills nothing (cached, or the account wasn't found) gives its slot back. Set it to `"0"` for no cap.
+   - `DETAILED_LIMITER` allows 2 detailed lookups per minute per X account. KV has no atomic counter, so this stops a burst of parallel requests from slipping past the daily cap.
    - `ALLOWED_X_USERS` (optional) limits detailed lookups to listed accounts. Use numeric account IDs where you can: usernames can be renamed or re-registered by someone else.
    - Set a spending limit in the X developer console as well.
 

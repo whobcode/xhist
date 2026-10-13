@@ -73,7 +73,7 @@ test("callback rejects a state this browser wasn't given (login CSRF)", async ()
     const noCookie = await callback(req("https://xhist.hwmnbn.me/auth/callback?state=S&code=C"), ENV);
     assert.match(noCookie.headers.get("location"), /signin=expired/);
     const wrong = await callback(req("https://xhist.hwmnbn.me/auth/callback?state=S&code=C", { cookie: "__Host-xhist_oauth=T.verifier" }), ENV);
-    assert.match(wrong.headers.get("location"), /signin=failed/);
+    assert.match(wrong.headers.get("location"), /signin=expired/);
   });
   assert.equal(called, false);
 });
@@ -136,12 +136,28 @@ test("refresh: losing a race to a parallel refresh uses the winner's tokens", as
   });
 });
 
-test("refresh: a dead refresh token ends the session", async () => {
+test("refresh: a dead refresh token reads as signed out but is never deleted or rewritten", async () => {
   const kv = fakeKV({ [`sess:${SID}`]: { accessToken: "old", refreshToken: "rt", expiresAt: 0 } });
+  const before = kv.m.get(`sess:${SID}`);
+  let writes = 0;
+  const put = kv.put; kv.put = async (...a) => { writes++; return put.apply(kv, a); };
+  const del = kv.delete; kv.delete = async (...a) => { writes++; return del.apply(kv, a); };
   await withFetch(async () => new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 }), async () => {
     assert.equal(await getSession(req("https://x/", { cookie: `__Host-xhist_sid=${SID}` }), { ...ENV, XHIST_KV: kv }), null);
   });
-  assert.equal(kv.m.has(`sess:${SID}`), false);
+  assert.equal(writes, 0);
+  assert.equal(kv.m.get(`sess:${SID}`), before);
+});
+
+test("refresh: a winner's write that lands late is still picked up", async () => {
+  const kv = fakeKV({ [`sess:${SID}`]: { accessToken: "old", refreshToken: "rt", expiresAt: 0 } });
+  await withFetch(async () => {
+    setTimeout(() => kv.m.set(`sess:${SID}`, JSON.stringify({ accessToken: "won", refreshToken: "rt2", expiresAt: Date.now() + 3_600_000 })), 800);
+    return new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 });
+  }, async () => {
+    const s = await getSession(req("https://x/", { cookie: `__Host-xhist_sid=${SID}` }), { ...ENV, XHIST_KV: kv });
+    assert.equal(s?.accessToken, "won");
+  });
 });
 
 test("cookie parsing and same-origin check", () => {

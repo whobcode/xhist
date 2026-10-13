@@ -26,18 +26,30 @@ async function limited(req, env) {
 /**
  * X bills API reads to the developer app, not to the visitor whose token is
  * used, so each signed-in account gets DETAILED_DAILY_LIMIT fresh detailed
- * lookups per UTC day (0 = unlimited). KV is eventually consistent, so this
- * is a soft cap, which is all it needs to be.
+ * lookups per UTC day (0 = unlimited). The slot is reserved *before* the
+ * lookup, which takes tens of seconds, and refunded if nothing was billed.
+ * KV has no atomic increment, so a burst of parallel requests could still
+ * share a slot; DETAILED_LIMITER (per account, per minute) bounds that.
  */
-async function detailedQuota(env, session) {
+async function reserveDetailed(env, session) {
+  const id = String(session.userId ?? session.username ?? "");
+  if (env.DETAILED_LIMITER && id) {
+    const { success } = await env.DETAILED_LIMITER.limit({ key: id });
+    if (!success) return { ok: false, reason: "burst" };
+  }
   const limit = Number(env.DETAILED_DAILY_LIMIT ?? 25);
-  if (!limit || !session.userId) return { ok: true, limit, spend: async () => {} };
-  const key = `quota:${session.userId}:${new Date().toISOString().slice(0, 10)}`;
-  const used = Number(await env.XHIST_KV.get(key).catch(() => null)) || 0;
+  if (!limit || !id) return { ok: true, refund: async () => {} };
+  const key = `quota:${id}:${new Date().toISOString().slice(0, 10)}`;
+  const read = async () => Number(await env.XHIST_KV.get(key).catch(() => null)) || 0;
+  const used = await read();
+  if (used >= limit) return { ok: false, reason: "daily", limit };
+  await env.XHIST_KV.put(key, String(used + 1), { expirationTtl: 2 * 86400 }).catch(() => {});
   return {
-    ok: used < limit,
-    limit,
-    spend: () => env.XHIST_KV.put(key, String(used + 1), { expirationTtl: 2 * 86400 }).catch(() => {}),
+    ok: true,
+    refund: async () => {
+      const now = await read();
+      if (now > 0) await env.XHIST_KV.put(key, String(now - 1), { expirationTtl: 2 * 86400 }).catch(() => {});
+    },
   };
 }
 
@@ -51,11 +63,16 @@ async function lookup(req, env) {
     const session = await getSession(req, env);
     if (!session) return json({ error: "Sign in with X to run a detailed lookup.", signIn: true }, 401);
     if (!allowedDetailed(env, session)) return json({ error: "Detailed lookups are limited to approved accounts." }, 403);
-    const quota = await detailedQuota(env, session);
-    if (!quota.ok) return json({ error: `You've used today's ${quota.limit} detailed lookups. Basic lookups are still available.` }, 429);
+    const slot = await reserveDetailed(env, session);
+    if (!slot.ok) {
+      return json({ error: slot.reason === "burst"
+        ? "Detailed lookups are limited to a couple a minute per account. Wait a moment and try again."
+        : `You've used today's ${slot.limit} detailed lookups. Basic lookups are still available.` }, 429);
+    }
+    let billed = false;
     try {
       const result = await detailedLookup(input, session, env);
-      if (!result.cached && result.status === "ok") await quota.spend();
+      billed = !result.cached && result.status === "ok";
       return json(result);
     } catch (e) {
       if (e instanceof XApiError) {
@@ -65,6 +82,8 @@ async function lookup(req, env) {
         return json({ error: `X API error ${e.status}.` }, 502);
       }
       throw e;
+    } finally {
+      if (!billed) await slot.refund();
     }
   }
   return json(await basicLookup(input, env));
@@ -75,7 +94,7 @@ export default {
     const { pathname } = new URL(req.url);
     try {
       if (pathname === "/api/me" && req.method === "GET") {
-        const s = await getSession(req, env);
+        const s = await getSession(req, env).catch(e => { console.error(`getSession: ${e.message}`); return null; });
         return json({ authAvailable: authConfigured(env), signedIn: !!s, username: s?.username ?? null, avatar: s?.avatar ?? null });
       }
       if (pathname === "/api/lookup" && req.method === "GET") return await lookup(req, env);

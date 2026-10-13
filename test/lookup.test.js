@@ -22,13 +22,13 @@ const post = (id, at, handle, extra = {}) => ({
 });
 const page = (data, next) => ({ data, includes: { users: [{ id: ID, username: "newname" }] }, meta: next ? { next_token: next } : {} });
 
-function xapi({ timelineFailsOnPage2 = false } = {}) {
+function xapi({ timelineFailsOnPage2 = false, memoryLolDown = false, archive = null } = {}) {
   const calls = [];
   const impl = async input => {
     const u = new URL(String(input));
     calls.push(u);
     const json = (b, status = 200) => new Response(JSON.stringify(b), { status });
-    if (u.hostname === "api.memory.lol") return json({ accounts: [] });
+    if (u.hostname === "api.memory.lol") return memoryLolDown ? json({}, 503) : json({ accounts: [] });
     if (u.hostname === "web.archive.org") return new Response("");
     if (u.pathname === "/2/users/by/username/newname") {
       return json({ data: { id: ID, username: "newname", name: "N", created_at: CREATED, protected: false, public_metrics: { tweet_count: 9 } } });
@@ -40,7 +40,8 @@ function xapi({ timelineFailsOnPage2 = false } = {}) {
     }
     if (u.pathname === "/2/tweets/search/all") {
       const q = u.searchParams.get("query");
-      if (q === `from:${ID}`) {
+      if (q === `from:${ID} -is:retweet` && archive) return json(archive(u));
+      if (q === `from:${ID} -is:retweet`) {
         // Newest-first: the window's oldest post is only on page 2.
         if (!u.searchParams.get("next_token")) return json(page([post("120", "2024-07-20T00:00:00.000Z", "oldname")], "n2"));
         return json(page([post("100", "2024-07-01T00:00:00.000Z", "oldname")]));
@@ -59,7 +60,7 @@ function xapi({ timelineFailsOnPage2 = false } = {}) {
   return { calls, impl };
 }
 
-async function run(env, opts) {
+async function run(env, opts = {}) {
   const { calls, impl } = xapi(opts);
   const real = globalThis.fetch;
   globalThis.fetch = impl;
@@ -74,7 +75,7 @@ async function run(env, opts) {
 
 test("archive search pages to the window's oldest post", async () => {
   const { r, calls } = await run({});
-  const archive = calls.filter(u => u.pathname === "/2/tweets/search/all" && u.searchParams.get("query") === `from:${ID}`);
+  const archive = calls.filter(u => u.pathname === "/2/tweets/search/all" && u.searchParams.get("query") === `from:${ID} -is:retweet`);
   assert.equal(archive.length, 2);
   assert.equal(archive[1].searchParams.get("next_token"), "n2");
   assert.equal(r.stats.oldestPost, "2024-07-01T00:00:00.000Z");
@@ -107,4 +108,37 @@ test("a failed later timeline page keeps earlier pages and caches briefly", asyn
 test("a complete result is cached for 12 hours", async () => {
   const { kv } = await run({});
   assert.equal(kv.m.get(`ttl:detail:${ID}`), String(12 * 3600));
+});
+
+test("memory.lol being down marks the result partial (short cache)", async () => {
+  const { r, kv } = await run({}, { memoryLolDown: true });
+  assert.ok(r.notes.includes("memory.lol could not be reached."));
+  assert.equal(kv.m.get(`ttl:detail:${ID}`), "1800");
+});
+
+test("a window too dense for the page budget is narrowed, not accepted", async () => {
+  // 1,000 posts in the account's first week, newest-first, 500 per page.
+  // With a 1-page budget the 7-day window can't be read to its end, so the
+  // walk narrows until a window fits and reaches the true first post.
+  const first = Date.parse(CREATED) + 3_600_000;
+  const posts = Array.from({ length: 1000 }, (_, i) => post(String(5000 + i), new Date(first + i * 600_000).toISOString(), i === 0 ? "firstname" : "oldname"));
+  const archive = u => {
+    const lo = Date.parse(u.searchParams.get("start_time"));
+    const hi = Date.parse(u.searchParams.get("end_time"));
+    const inWin = posts.filter(p => { const t = Date.parse(p.created_at); return t >= lo && t < hi; }).reverse();
+    const off = Number(u.searchParams.get("next_token") ?? 0);
+    const slice = inWin.slice(off, off + 500);
+    return page(slice, off + 500 < inWin.length ? String(off + 500) : undefined);
+  };
+  const { r } = await run({ ARCHIVE_PAGES: "1" }, { archive });
+  assert.ok(r.handles.some(h => h.handle === "firstname"), JSON.stringify(r.handles.map(h => h.handle)));
+  assert.equal(r.stats.oldestPost, new Date(first).toISOString());
+  assert.ok(!r.notes.some(n => /very first posts/.test(n)));
+});
+
+test("an account whose posts never fit the budget says so", async () => {
+  const at = new Date(Date.parse(CREATED) + 60_000).toISOString();
+  const archive = () => page([post("7000", at, "oldname")], "more"); // always another page
+  const { r } = await run({ ARCHIVE_PAGES: "1" }, { archive });
+  assert.ok(r.notes.some(n => /very first posts/.test(n)));
 });

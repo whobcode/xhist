@@ -57,9 +57,9 @@ export function xclient(token) {
       return { pages, error: null };
     },
 
-    /** Full-archive search, one page. Pass `next_token` from a previous page to continue. */
+    /** Full-archive search, one page (up to 500). Pass `next_token` from a previous page to continue. */
     searchAll: (query, extra = {}) => get("/tweets/search/all", {
-      query, max_results: 100, "tweet.fields": TWEET_FIELDS, expansions: "author_id", "user.fields": "username", ...extra,
+      query, max_results: 500, "tweet.fields": TWEET_FIELDS, expansions: "author_id", "user.fields": "username", ...extra,
     }),
   };
 }

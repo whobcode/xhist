@@ -18,7 +18,12 @@
   "kv_namespaces": [{ "binding": "XHIST_KV", "id": "01a281dcaaee4f1e8d1dae29f57c2291" }],
 
   // 20 lookups per minute per IP.
-  "ratelimits": [{ "name": "LOOKUP_LIMITER", "namespace_id": "4801", "simple": { "limit": 20, "period": 60 } }],
+  "ratelimits": [
+    { "name": "LOOKUP_LIMITER", "namespace_id": "4801", "simple": { "limit": 20, "period": 60 } },
+    // 2 detailed lookups per minute per X account: bounds bursts that the
+    // KV daily counter (no atomic increment) can't see.
+    { "name": "DETAILED_LIMITER", "namespace_id": "4802", "simple": { "limit": 2, "period": 60 } }
+  ],
 
   "vars": {
     // Client ID of the X app (developer.x.com) registered as a "Native App",
