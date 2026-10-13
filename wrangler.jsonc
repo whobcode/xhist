@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "xhist",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-08-20",
+  "workers_dev": false,
+  "routes": [{ "pattern": "xhist.hwmnbn.me", "custom_domain": true }],
+
+  // The page and its assets. /api and /auth always reach the Worker first.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/auth/*"]
+  },
+
+  // Sessions (sess:), OAuth state (oauth:), lookup results (detail:) and
+  // memory.lol / Wayback responses (src:).
+  "kv_namespaces": [{ "binding": "XHIST_KV", "id": "01a281dcaaee4f1e8d1dae29f57c2291" }],
+
+  // 20 lookups per minute per IP.
+  "ratelimits": [{ "name": "LOOKUP_LIMITER", "namespace_id": "4801", "simple": { "limit": 20, "period": 60 } }],
+
+  "vars": {
+    // Comma-separated X usernames allowed to run detailed lookups. Empty = anyone signed in.
+    "ALLOWED_X_USERS": "",
+    "TIMELINE_PAGES": "5",
+    "REPLY_THREADS": "6"
+  },
+  // Secrets: wrangler secret put X_CLIENT_ID / X_CLIENT_SECRET
+
+  "observability": { "enabled": true }
+}

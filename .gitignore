@@ -1,0 +1,7 @@
+node_modules/
+.xhist-profile/
+.xhist-cache/
+xhist-out/
+.wrangler/
+.dev.vars
+dist/

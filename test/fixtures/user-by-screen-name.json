@@ -1,0 +1,4 @@
+{"data":{"user":{"result":{"__typename":"User","rest_id":"1806000000000000001",
+  "core":{"screen_name":"newname","name":"Example","created_at":"Fri Jun 28 18:48:58 +0000 2024"},
+  "privacy":{"protected":false},
+  "legacy":{"statuses_count":120}}}}}

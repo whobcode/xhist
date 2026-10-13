@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>xhist — X handle history</title>
+  <meta name="description" content="See the previous usernames of an X (Twitter) account, with evidence and dates.">
+  <meta name="theme-color" content="#000000">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="xhist home">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3a9 9 0 0 0-9 9H1l3.9 3.9.1.1L9 12H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+      <span>xhist</span>
+    </a>
+    <div id="account" class="account"></div>
+  </header>
+
+  <main class="column">
+    <section class="hero">
+      <h1>Handle history</h1>
+      <p class="muted">Every name an X account has gone by, with the posts that prove it.</p>
+
+      <form id="search" class="search" autocomplete="off" role="search">
+        <label class="search-box">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.25 3.75a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zm-8.5 6.5a8.5 8.5 0 1 1 15.18 5.26l4.4 4.4-1.42 1.42-4.4-4.4A8.5 8.5 0 0 1 1.75 10.25z"/></svg>
+          <span class="at">@</span>
+          <input id="u" name="u" type="text" inputmode="text" spellcheck="false" maxlength="16"
+                 placeholder="username" aria-label="X username" required>
+        </label>
+        <button class="btn btn-primary" type="submit">Look up</button>
+      </form>
+
+      <div class="modes" role="radiogroup" aria-label="Lookup type">
+        <button type="button" role="radio" data-mode="basic" aria-checked="true">Basic</button>
+        <button type="button" role="radio" data-mode="detailed" aria-checked="false">Detailed <span class="tag">Sign in</span></button>
+      </div>
+      <p id="mode-hint" class="hint muted"></p>
+    </section>
+
+    <section id="results" aria-live="polite"></section>
+
+    <footer class="foot">
+      <label class="linkish" for="file">Open a report from the xhist CLI</label>
+      <input id="file" type="file" accept="application/json,.json" hidden>
+      <p class="muted small">Old handles can be re-registered by anyone, and whoever holds one now may be unrelated.
+        Data comes from X, <a href="https://memory.lol" rel="noopener" target="_blank">memory.lol</a> and the
+        <a href="https://web.archive.org" rel="noopener" target="_blank">Wayback Machine</a>. xhist is read-only and never posts for you.</p>
+    </footer>
+  </main>
+
+  <div id="drop" class="drop" hidden><div>Drop an xhist report (.json)</div></div>
+</body>
+</html>

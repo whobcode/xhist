@@ -1,0 +1,26 @@
+{
+  "name": "xhist",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Recover an X (Twitter) account's previous handles, with evidence and approximate dates.",
+  "bin": {
+    "xhist": "src/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "login": "node src/cli.js login",
+    "browsers": "playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.64.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.125.0"
+  }
+}

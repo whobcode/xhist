@@ -1,0 +1,31 @@
+{"data":{"threaded_conversation_with_injections_v2":{"instructions":[{"type":"TimelineAddEntries","entries":[
+ {"entryId":"tweet-1810000000000000001","content":{"itemContent":{"tweet_results":{"result":{
+   "__typename":"Tweet","rest_id":"1810000000000000001",
+   "core":{"user_results":{"result":{"__typename":"User","rest_id":"1806000000000000001","core":{"screen_name":"newname"}}}},
+   "legacy":{"id_str":"1810000000000000001","user_id_str":"1806000000000000001","created_at":"Mon Jul 15 12:00:00 +0000 2024",
+     "full_text":"first light https://t.co/a","display_text_range":[0,11],
+     "entities":{"media":[{"expanded_url":"https://x.com/oldname/status/1810000000000000001/photo/1"}],"urls":[],"user_mentions":[]}}}}}}},
+ {"entryId":"conversationthread-1","content":{"items":[
+  {"item":{"itemContent":{"tweet_results":{"result":{
+   "__typename":"Tweet","rest_id":"1810000000000000101",
+   "core":{"user_results":{"result":{"__typename":"User","rest_id":"500","core":{"screen_name":"replier"}}}},
+   "legacy":{"id_str":"1810000000000000101","user_id_str":"500","created_at":"Tue Jul 16 08:00:00 +0000 2024",
+     "full_text":"@oldname hi","display_text_range":[9,11],
+     "in_reply_to_user_id_str":"1806000000000000001","in_reply_to_screen_name":"newname","in_reply_to_status_id_str":"1810000000000000001",
+     "entities":{"urls":[],"user_mentions":[{"id_str":"1806000000000000001","screen_name":"newname","indices":[0,8]}]}}}}}}},
+  {"item":{"itemContent":{"tweet_results":{"result":{
+   "__typename":"Tweet","rest_id":"1810000000000000102",
+   "core":{"user_results":{"result":{"__typename":"User","rest_id":"501","core":{"screen_name":"replier2"}}}},
+   "legacy":{"id_str":"1810000000000000102","user_id_str":"501","created_at":"Wed Jul 17 08:00:00 +0000 2024",
+     "full_text":"@replier2 @oldname yes &amp; no","display_text_range":[19,27],
+     "in_reply_to_user_id_str":"1806000000000000001","in_reply_to_screen_name":"newname",
+     "entities":{"urls":[],"user_mentions":[]}}}}}}},
+  {"item":{"itemContent":{"tweet_results":{"result":{
+   "__typename":"Tweet","rest_id":"1810000000000000103",
+   "core":{"user_results":{"result":{"__typename":"User","rest_id":"502","core":{"screen_name":"fan"}}}},
+   "legacy":{"id_str":"1810000000000000103","user_id_str":"502","created_at":"Thu Jul 18 08:00:00 +0000 2024",
+     "full_text":"a &amp; b @OldName","display_text_range":[0,14],
+     "in_reply_to_user_id_str":"500","in_reply_to_screen_name":"replier",
+     "entities":{"urls":[],"user_mentions":[{"id_str":"1806000000000000001","screen_name":"newname","indices":[6,14]}]}}}}}}}
+ ]}}
+]}]}}}
