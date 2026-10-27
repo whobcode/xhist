@@ -62,3 +62,10 @@ and the Worker (`worker/`, xhist.hwmnbn.me) share the pure core in `src/`.
 
 No cross-platform identity linking, no real-name or location inference, no
 bulk mode, no bypassing protected accounts or login walls.
+
+## Deploying
+
+Every `npm run deploy` / `wrangler deploy` is paired with a commit of exactly
+the code that went live, then a push to origin — no deployed change stays
+uncommitted, however small. Run `npm test` first and put the deployed version
+ID in the commit message.
