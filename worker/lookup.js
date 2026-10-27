@@ -22,7 +22,7 @@ const latestDate = dates => (dates ?? []).filter(Boolean).sort().at(-1) ?? null;
 
 async function waybackFor(handles, cache) {
   const out = {};
-  await Promise.all(handles.slice(0, MAX_WAYBACK).map(async h => { out[h] = await waybackTimestamps(h, { cache }); }));
+  await Promise.all(handles.slice(0, MAX_WAYBACK).map(async h => { out[h] = await waybackTimestamps(h, { cache, log: m => console.error(m) }); }));
   return out;
 }
 
